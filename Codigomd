@@ -63,11 +63,11 @@ def simular_paso(carretera, v_max, p, fluctuation_prob):
                     v = min(v + 1, v_max)  # Acelera sin límite hasta la velocidad máxima
                 elif carretera[carril, adelante] != -1 and carretera[carril, atras] == -1:
                     # Regla 2: Solo la casilla adelante ocupada, puede acelerar sin problema
-                    v = min(v + 1, v_max)  # Acelera sin límite hasta la velocidad máxima
+                    v = min(v - 1, 0)   # Frenar sin problema, pero no acelerar demasiado 
                     # No se puede detener completamente, por lo que no se pone v = 0
                 elif carretera[carril, adelante] == -1 and carretera[carril, atras] != -1:
                     # Regla 3: Solo la casilla de atrás ocupada, no puede acelerar mucho
-                    v = max(v - 1, 0)  # Frenar sin problema, pero no acelerar demasiado
+                    v = max(v + 1, V_MAX)  # Acelera sin límite hasta la velocidad máxima
                 elif carretera[carril, adelante] != -1 and carretera[carril, atras] != -1:
                     # Regla 4: Ambas casillas ocupadas, mantener ritmo constante
                     v = max(v - 1, 0)  # Mantener ritmo, por lo que frena un poco
