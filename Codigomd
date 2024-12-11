@@ -1,6 +1,3 @@
-# Modelado-de-flujo-de-tr-nsito-vehicular-
-simulador de tráfico basado en autómatas celulares que permita modelar, analizar y optimizar el flujo vehicular en diferentes escenarios
-
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -8,27 +5,39 @@ import matplotlib.pyplot as plt
 V_REAL = 60
 ROAD_LENGTH = 100        # Longitud de la carretera
 DENSITY = 0.3            # Densidad de vehículos
-V_MAX = 16            # Velocidad máxima extendida
+V_MAX = 16               # Velocidad máxima extendida
 P = 0.1                  # Probabilidad de frenado aleatorio
 FLUCTUATION_PROB = 0.1   # Probabilidad de fluctuación aleatoria
-STEPS = 5            # Número de pasos de simulación
+STEPS = 5                # Número de pasos de simulación
 
+
+# Asignar etiquetas únicas
+class EtiquetasVehiculos:
+    def _init_(self):
+        self.contador = 0
+
+    def nueva_etiqueta(self):
+        self.contador += 1
+        return f"V{self.contador}"
 
 def inicializar_carretera(longitud, densidad, v_max):
     """
     Inicializa la carretera con vehículos distribuidos aleatoriamente en dos carriles.
     """
     carretera = -np.ones((2, longitud), dtype=int)  # -1 representa una celda vacía
+    etiquetas = np.empty((2, longitud), dtype=object)  # Almacena etiquetas de los vehículos
     max_posiciones = 2 * longitud  # Número máximo de posiciones disponibles
     num_vehiculos = min(int(densidad * max_posiciones), max_posiciones)  # Máximo de vehículos permitido
     posiciones = np.random.choice(max_posiciones, num_vehiculos, replace=False)  # Posiciones iniciales
 
+    etiquetas_control = EtiquetasVehiculos()
+
     for pos in posiciones:
         carril, celda = divmod(pos, longitud)  # Convertir posición a carril y celda
         carretera[carril, celda] = np.random.randint(0, v_max + 1)  # Asignar velocidad inicial
+        etiquetas[carril, celda] = etiquetas_control.nueva_etiqueta()
 
-    return carretera
-
+    return carretera, etiquetas, etiquetas_control
 
 def obtener_color(velocidad, v_max):
     """
@@ -41,36 +50,28 @@ def obtener_color(velocidad, v_max):
     else:
         return 'yellow'  # Velocidad máxima/peligrosa
 
-
-def simular_paso(carretera, v_max, p, fluctuation_prob):
+def simular_paso(carretera, etiquetas, etiquetas_control, v_max, p, fluctuation_prob):
     """
     Simula un paso de tiempo en la carretera según las nuevas reglas.
     """
     longitud = carretera.shape[1]
     nueva_carretera = -np.ones_like(carretera)
+    nuevas_etiquetas = np.empty_like(etiquetas, dtype=object)
 
     for carril in range(2):  # Iterar sobre ambos carriles
         for i in range(longitud):
             if carretera[carril, i] != -1:  # Si hay un vehículo
                 v = carretera[carril, i]
+                etiqueta = etiquetas[carril, i]
 
                 adelante = (i + 1) % longitud  # Casilla adelante
                 atras = (i - 1) % longitud     # Casilla atrás
 
                 # Reglas de comportamiento basadas en la ocupación de las casillas de adelante y atrás
                 if carretera[carril, adelante] == -1 and carretera[carril, atras] == -1:
-                    # Regla 1: Ambas casillas vacías, puede acelerar o frenar sin problema
-                    v = min(v + 1, v_max)  # Acelera sin límite hasta la velocidad máxima
-                elif carretera[carril, adelante] != -1 and carretera[carril, atras] == -1:
-                    # Regla 2: Solo la casilla adelante ocupada, puede acelerar sin problema
-                    v = min(v - 1, 0)   # Frenar sin problema, pero no acelerar demasiado 
-                    # No se puede detener completamente, por lo que no se pone v = 0
-                elif carretera[carril, adelante] == -1 and carretera[carril, atras] != -1:
-                    # Regla 3: Solo la casilla de atrás ocupada, no puede acelerar mucho
-                    v = max(v + 1, V_MAX)  # Acelera sin límite hasta la velocidad máxima
-                elif carretera[carril, adelante] != -1 and carretera[carril, atras] != -1:
-                    # Regla 4: Ambas casillas ocupadas, mantener ritmo constante
-                    v = max(v - 1, 0)  # Mantener ritmo, por lo que frena un poco
+                    v = min(v + 1, v_max)  # Acelera
+                elif carretera[carril, adelante] != -1:
+                    v = max(v - 1, 0)  # Frena si hay un vehículo adelante
 
                 # Frenado aleatorio
                 if np.random.rand() < p:
@@ -82,12 +83,13 @@ def simular_paso(carretera, v_max, p, fluctuation_prob):
                     v = max(0, min(v + fluctuation, v_max))
 
                 # Actualizar la posición en la nueva carretera
-                nueva_carretera[carril, (i + v) % longitud] = v
+                nueva_pos = (i + v) % longitud
+                nueva_carretera[carril, nueva_pos] = v
+                nuevas_etiquetas[carril, nueva_pos] = etiqueta
 
-    return nueva_carretera
+    return nueva_carretera, nuevas_etiquetas
 
-
-def visualizar_carretera_grafica(carretera, step, v_max):
+def visualizar_carretera_grafica(carretera, etiquetas, step, v_max):
     """
     Representa gráficamente la carretera con dos carriles y muestra los colores según las velocidades.
     """
@@ -97,13 +99,14 @@ def visualizar_carretera_grafica(carretera, step, v_max):
         y_positions = np.ones_like(x_positions) * carril  # Carril 0 o 1
         colors = [obtener_color(carretera[carril, x], v_max) for x in x_positions]
         velocidades = carretera[carril, x_positions]
+        etiquetas_vehiculos = [etiquetas[carril, x] for x in x_positions]
 
         # Dibujar vehículos
         plt.scatter(x_positions, y_positions, color=colors, s=50)
 
-        # Añadir velocidades como etiquetas
-        for x, y, v in zip(x_positions, y_positions, velocidades):
-            plt.text(x, y + 0.1, str(v), color='black', fontsize=8, ha='center', va='bottom')
+        # Añadir velocidades y etiquetas como etiquetas
+        for x, y, v, etiqueta in zip(x_positions, y_positions, velocidades, etiquetas_vehiculos):
+            plt.text(x, y + 0.1, f"{etiqueta}\n({v})", color='black', fontsize=8, ha='center', va='bottom')
 
     # Configurar gráfica
     plt.xlim(0, carretera.shape[1])
@@ -113,7 +116,6 @@ def visualizar_carretera_grafica(carretera, step, v_max):
     plt.tight_layout()
     plt.pause(1)
     plt.clf()
-
 
 def calcular_metrica(carretera):
     """
@@ -125,10 +127,9 @@ def calcular_metrica(carretera):
     flujo = num_vehiculos / (2 * ROAD_LENGTH)  # Proporción de vehículos en la carretera
     return velocidad_promedio, flujo
 
-
 def main():
     # Inicializar la carretera
-    carretera = inicializar_carretera(ROAD_LENGTH, DENSITY, V_MAX)
+    carretera, etiquetas, etiquetas_control = inicializar_carretera(ROAD_LENGTH, DENSITY, V_MAX)
 
     # Configurar visualización
     plt.ion()
@@ -136,19 +137,18 @@ def main():
     # Simular durante varios pasos
     for step in range(STEPS):
         # Visualizar el estado actual
-        visualizar_carretera_grafica(carretera, step, V_MAX)
+        visualizar_carretera_grafica(carretera, etiquetas, step, V_MAX)
 
         # Calcular métricas
         velocidad_promedio, flujo = calcular_metrica(carretera)
         print(f"Paso {step}: Velocidad promedio = {velocidad_promedio:.2f}, Flujo = {flujo:.2f}")
 
         # Simular el siguiente paso
-        carretera = simular_paso(carretera, V_MAX, P, FLUCTUATION_PROB)
+        carretera, etiquetas = simular_paso(carretera, etiquetas, etiquetas_control, V_MAX, P, FLUCTUATION_PROB)
 
     # Finalizar visualización
     plt.ioff()
     plt.show()
 
-
-if __name__ == "__main__":
+if _name_ == "_main_":
     main()
